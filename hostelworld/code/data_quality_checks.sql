@@ -34,7 +34,7 @@ order by 1, 2
 ;
 /*
  WHY?
- In my experience, some older versions may noy get the Variant they are expectd to have and it sometimes influences results.
+ In my experience, some older versions may not get the Variant they are expectd to have and it sometimes influences results.
  Also, w can see some dev data (maybe from test devices) identified with "staging" in front of the version identifiers, most likely used to try the variants allocation and functionality of the feature - should be removed from the analysis
  - Versions 9.79.3 and 9.81.0 only contain Variation type users, however they don't seem to be super significant in the analysis if we include them anyway, as each have only 2 users in each and in the remaining versions we have a fair distribution
  - Per version we seem to have a fair representation of the user distribution between Variation and Control, as to have a Control group relatively representative, in terms of general size of the sample it can be a smaller sample as long as it remains statistically representative of the target group - or variation (if we follow a normal approximation calculation of the sample size). Further checks on Control group's representativeness of the target will be made in another code.
@@ -148,3 +148,14 @@ WILL NOT REMOVE
 
 WILL NOT REMOVE any of the remaining ones due to the same reasons mentioned in point 5, low amount for effort to remove + potential loss in other metrics.
 */
+
+
+-- check for nulls where they shouldn't exist
+SELECT 
+  count(case when user_id is null then 1 end) as user_null
+  , count(case when event_name is null then 1 end) as event_null
+  , count(case when login_status is null then 1 end) as login_null
+  , count(case when platform is null then 1 end) as platform_null
+  , count(case when cohort is null then 1 end) as cohort_null
+FROM `elegant-shelter-407900.hostelworld.ab_test_dataset`
+;
