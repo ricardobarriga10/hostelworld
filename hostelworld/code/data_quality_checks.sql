@@ -1,6 +1,4 @@
 
--- input table stored in `elegant-shelter-407900.hostelworld.ab_test_dataset` in my personal Google BigQuery database.
-
 /*********************************/
 /*      DATA QUALITY CHECKS      */
 /*********************************/
@@ -34,7 +32,7 @@ order by 1, 2
 ;
 /*
  WHY?
- In my experience, some older versions may not get the Variant they are expectd to have and it sometimes influences results.
+ In my experience, some older versions may noy get the Variant they are expectd to have and it sometimes influences results.
  Also, w can see some dev data (maybe from test devices) identified with "staging" in front of the version identifiers, most likely used to try the variants allocation and functionality of the feature - should be removed from the analysis
  - Versions 9.79.3 and 9.81.0 only contain Variation type users, however they don't seem to be super significant in the analysis if we include them anyway, as each have only 2 users in each and in the remaining versions we have a fair distribution
  - Per version we seem to have a fair representation of the user distribution between Variation and Control, as to have a Control group relatively representative, in terms of general size of the sample it can be a smaller sample as long as it remains statistically representative of the target group - or variation (if we follow a normal approximation calculation of the sample size). Further checks on Control group's representativeness of the target will be made in another code.
@@ -68,7 +66,7 @@ having cohort_count > 1
 select a.*
 from `elegant-shelter-407900.hostelworld.ab_test_dataset` a
 join (
-    -- to identify which users had differences betwen events of 0 seconds and then search their whole sessions and see the data myself
+    -- to identify which users had differences betwen events of 0 seconds and then search their whole sessions and see the data myself to see what kind of events have this "issue"
     select distinct user_id
     from (
       select 
@@ -150,6 +148,7 @@ WILL NOT REMOVE any of the remaining ones due to the same reasons mentioned in p
 */
 
 
+
 -- check for nulls where they shouldn't exist
 SELECT 
   count(case when user_id is null then 1 end) as user_null
@@ -158,4 +157,82 @@ SELECT
   , count(case when platform is null then 1 end) as platform_null
   , count(case when cohort is null then 1 end) as cohort_null
 FROM `elegant-shelter-407900.hostelworld.ab_test_dataset`
+-- 0
 ;
+-- Check for duplicates
+
+with aa as (
+  SELECT 
+    EVENT_DATE, EVENT_NAME, ACTION, EVENT_DATETIME, PLATFORM, USER_ID, LOGIN_STATUS, APP_LANGUAGE, RELEASE_VERSION, PAGE_TYPE, IP_COUNTRY, COHORT, count(*) as dups_flg
+  FROM `elegant-shelter-407900.hostelworld.ab_test_dataset`
+  group by all
+  having dups_flg >1
+  )
+
+select dups_flg, count(*) --sum(dups_flg)
+from aa
+group by 1
+;
+
+
+SELECT 1 as RELEASE_VERSION 
+  , count(distinct user_id) as users
+  , count(*) as rows_
+FROM `elegant-shelter-407900.hostelworld.ab_test_dataset`
+where RELEASE_VERSION like '%staging%'
+group by 1
+--order by 3 desc
+order by 1, 2 desc
+;
+
+
+
+-- check if we have any session lasting more than one day and also with long duration if I aggregate by user_id (no session_id or some other identifier)
+-- my gioal is to find what defines a session and go with that
+-- general information states acceptable time before timeout is 30 minutes in low risk apps - trying this first and then changing to other threasholds if I fund the data too strange (Google search) 
+select *
+    , countif(date_diff_seconds > 1800 or date_diff_seconds is null)  over (partition by user_id order by event_datetime) AS session_id
+
+from (
+     select 
+        distinct user_id
+          , DATE(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) as EVENT_DATE
+          , case when action is null then event_name else concat(action, '-', PAGE_TYPE) end as event
+          , DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')) as event_datetime
+          , lag(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) over (partition by concat(user_id) order by event_datetime) as last_event_time
+          , lag(case when action is null then event_name else concat(action, '-', PAGE_TYPE) end ) over (partition by concat(user_id) order by event_datetime) as last_event
+          , date_diff(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')),  lag(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) over (partition by concat(user_id) order by event_datetime), second) as date_diff_seconds
+              
+      from `elegant-shelter-407900.hostelworld.ab_test_base` a
+      left join `elegant-shelter-407900.hostelworld.country_timezone` b
+        on ip_country = country
+    )
+order by 1, 2, 4
+;
+
+
+-- check landing page quality:
+      select event, count(*) as occur
+      from (
+        select
+          case when action is null then event_name else concat(action, '-', PAGE_TYPE) end as event
+          , Row_number() over (partition by user_id order by event_datetime) as RN
+        FROM `elegant-shelter-407900.hostelworld.ab_test_base`
+        qualify RN  = 1
+      )
+      group by 1
+      order by 2 desc
+;
+
+
+-- how many countries would be without timezone
+select count(distinct ip_country)
+  , count(distinct case when country is not null then ip_country end)
+  , string_agg(distinct case when country is null then ip_country end, ', ')
+
+from `elegant-shelter-407900.hostelworld.ab_test_base` a
+left join `elegant-shelter-407900.hostelworld.country_timezone` b
+  on ip_country = country
+;
+
+
