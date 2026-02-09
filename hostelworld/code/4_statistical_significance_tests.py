@@ -86,26 +86,38 @@ for metric in conversion_metrics:
             "run_date": date.today()
         })
 
-        
+
+
 for metric in avg_metrics:
     filtered = df[df["step_3_flg"] == 1]
 
-    per_user = (
+    # simple business metric: sum of events / unique users
+    summary = (
+        filtered
+        .groupby("variant")
+        .agg(
+            total_events=(metric, "sum"),
+            unique_users=("user_id", "nunique")
+        )
+    )
+
+    # average per user
+    summary["value"] = summary["total_events"] / summary["unique_users"]
+
+    # t-test: sum events per user (user-level) for significance
+    user_level = (
         filtered
         .groupby(["variant", "user_id"])[metric]
         .sum()
         .reset_index()
     )
 
-    group_a = per_user[per_user["variant"] == "Variation"][metric]
-    group_b = per_user[per_user["variant"] == "Control"][metric]
-
-    mean_a = group_a.mean()
-    mean_b = group_b.mean()
+    group_a_values = user_level[user_level["variant"] == "Variation"][metric]
+    group_b_values = user_level[user_level["variant"] == "Control"][metric]
 
     t_stat, p_value = ttest_ind(
-        group_a,
-        group_b,
+        group_a_values,
+        group_b_values,
         equal_var=False
     )
 
@@ -115,8 +127,8 @@ for metric in avg_metrics:
             "metric": metric,
             "metric_type": "avg_events_per_user",
             "variant": "Variation",
-            "value": float(mean_a),
-            "sample_size": int(group_a.nunique()),
+            "value": float(summary.loc["Variation", "value"]),
+            "sample_size": int(summary.loc["Variation", "unique_users"]),
             "statistic": float(t_stat),
             "p_value": float(p_value),
             "is_significant": p_value < alpha,
@@ -127,8 +139,8 @@ for metric in avg_metrics:
             "metric": metric,
             "metric_type": "avg_events_per_user",
             "variant": "Control",
-            "value": float(mean_b),
-            "sample_size": int(group_b.nunique()),
+            "value": float(summary.loc["Control", "value"]),
+            "sample_size": int(summary.loc["Control", "unique_users"]),
             "statistic": float(t_stat),
             "p_value": float(p_value),
             "is_significant": p_value < alpha,
@@ -142,7 +154,6 @@ results_df = pd.DataFrame(results)
 
 print("Final results preview:")
 print(results_df)
-
 
 # exporting back to BQ:
 table_id = "elegant-shelter-407900.hostelworld.ab_test_stat_sig_results_CR_2"
