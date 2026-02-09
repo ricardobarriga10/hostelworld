@@ -4,42 +4,46 @@
 
 
 create or replace table `elegant-shelter-407900.hostelworld.ab_test_base_2` as 
-select 
-  to_hex(md5(concat(user_id, countif(date_diff_seconds > 1800 or date_diff_seconds is null)  over (partition by user_id order by event_datetime)))) as sssion_id
-  , * except(cohorts_p_user, RN)
+select *
 from (
-     select 
-          USER_ID
-          , COHORT
-          , DATE(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) as event_date
-          , EVENT_NAME
-          , ACTION
-          , PAGE_TYPE
-          , DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')) as event_datetime
-          , coalesce(timezone, 'UTC') as timezone
-          , IP_COUNTRY
-          , PLATFORM
-          , LOGIN_STATUS
-          , APP_LANGUAGE
-          , RELEASE_VERSION
-          , date_diff(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')),  lag(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) over (partition by concat(user_id) order by event_datetime), second) as date_diff_seconds
-          , count(distinct cohort) over (partition by user_id) as cohorts_p_user 
-          , row_number() over (partition by EVENT_DATE, EVENT_NAME, ACTION, EVENT_DATETIME, PLATFORM, USER_ID, LOGIN_STATUS, APP_LANGUAGE, RELEASE_VERSION, PAGE_TYPE, IP_COUNTRY, COHORT) as RN
-              
-      FROM `elegant-shelter-407900.hostelworld.ab_test_dataset` a
-      left join `elegant-shelter-407900.hostelworld.country_timezone` b
-        on ip_country = country
-      where RELEASE_VERSION not like '%staging%'
-      qualify cohorts_p_user < 2
-          and RN = 1
-    )
+    select 
+      to_hex(md5(concat(user_id, countif(date_diff_seconds > 1800 or date_diff_seconds is null)  over (partition by user_id order by event_datetime)))) as session_id
+      , * except(cohorts_p_user, RN)
+    from (
+        select 
+              USER_ID
+              , COHORT
+              , DATE(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) as event_date
+              , EVENT_NAME
+              , ACTION
+              , PAGE_TYPE
+              , DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')) as event_datetime
+              , coalesce(timezone, 'UTC') as timezone
+              , IP_COUNTRY
+              , PLATFORM
+              , LOGIN_STATUS
+              , APP_LANGUAGE
+              , RELEASE_VERSION
+              , date_diff(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC')),  lag(DATETIME(event_datetime, coalesce(trim(timezone), 'UTC'))) over (partition by concat(user_id) order by event_datetime), second) as date_diff_seconds
+              , count(distinct cohort) over (partition by user_id) as cohorts_p_user 
+              , row_number() over (partition by EVENT_DATE, EVENT_NAME, ACTION, EVENT_DATETIME, PLATFORM, USER_ID, LOGIN_STATUS, APP_LANGUAGE, RELEASE_VERSION, PAGE_TYPE, IP_COUNTRY, COHORT) as RN
+                  
+          FROM `elegant-shelter-407900.hostelworld.ab_test_dataset` a
+          left join `elegant-shelter-407900.hostelworld.country_timezone` b
+            on ip_country = country
+          where RELEASE_VERSION not like '%staging%'
+          qualify cohorts_p_user < 2
+              and RN = 1
+        )
+)
+qualify count(distinct ip_country) over (partition by session_id) < 2 -- figured out there were some users with more than one country associated and for the sake of the exercise I decided to remove them as they were getting in the way of data prep and for the business context were insignificant
 order by 1, 2, 4
 ;
 
 
-ALTER TABLE `elegant-shelter-407900.hostelworld.ab_test_base_2` 
-RENAME COLUMN sssion_id TO session_id
-;
+--ALTER TABLE `elegant-shelter-407900.hostelworld.ab_test_base_2` 
+--RENAME COLUMN sssion_id TO session_id
+--;
 
 
 select
@@ -163,3 +167,20 @@ order by abs(perc_diff) desc
  -- distribution per time to book cohort (same day purchases vs medium planners vs long term planners) 
 
 -- we'd need past data to evaluate this, as typically these groups are generated using data from before the test.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
